@@ -6,6 +6,7 @@
 #include <esp_now.h>
 #include "config.h"
 
+
 // --- Game Constants ---
 #define NUM_SWITCHES 3
 #define SCREEN_WIDTH 128
