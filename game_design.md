@@ -22,14 +22,14 @@
 
 ### スイッチクリック後の遷移：
   - クリックの結果、全スイッチがONになった場合 → **BOMBED_MODE**（自分が起爆 = 負け）
-  - それ以外 → 全スイッチの状態をESP-NOWでブロードキャスト送信 → **WAITING_MODE**へ遷移
+  - それ以外 → ALERT_STATUSをoffにする。全スイッチの状態をESP-NOWでブロードキャスト送信 → **WAITING_MODE**へ遷移
 
 ### WAITING_MODEでの動作：
   - 他のプレイヤーの誰か1人がスイッチをクリックするのを待つ
   - ESP-NOWでスイッチ状態を受信したら：
     - 全スイッチがONの場合 → **BOMBED_MODE**（他のプレイヤーが起爆 = 生存）
     - 残りOFFスイッチが1つの場合 → ALERT_STATUS = ON にして **PLAY_MODE**へ遷移
-    - それ以外 → **PLAY_MODE**へ遷移
+    - それ以外 → ALERT_STATUSをoffにする。**PLAY_MODE**へ遷移
   - ターン順は人間が管理（システムによる強制的な順番制御なし）
 
 ## 3. 操作方法 (Controls)
@@ -60,7 +60,8 @@
   - ALERT_STATUS = ON: Cyclic blink Amber (0.5s period)
   - ALERT_STATUS = OFF: All Green
 - **BOMBED_MODE:**
-  - All blink Red (0.5s period)
+  - 自分がクリックして爆発させた場合：All blink Red (0.5s period)
+  - 他の誰かが爆発させた場合：All blink Green (0.5s period)
 
 ## 6. Buzzer
 - モード切り替わり時：

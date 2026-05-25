@@ -4,6 +4,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
 #include "config.h"
 
 
@@ -26,10 +27,16 @@ int cursorIndex = 0;  // Currently selected switch (0 to NUM_SWITCHES-1)
 bool alertStatus = false;
 
 // ESP-NOW Data
+const uint8_t GAME_ID = 25;  // ネットワーク分離用の固有ID
+const uint8_t WIFI_CHANNEL = 13; // 固定Wi-Fiチャンネル
+
 typedef struct {
+  uint8_t game_id;                 // ゲーム識別子
   bool switchState[NUM_SWITCHES];  // All switch states
 } Message;
 Message myMsg;
+
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // Hardware
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
@@ -73,6 +80,9 @@ void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, in
   Message received;
   memcpy(&received, incomingData, sizeof(received));
 
+  // 別のESP-NOWデバイスからのデータは無視する
+  if (received.game_id != GAME_ID) return;
+
   // Update local switch states
   for (int i = 0; i < NUM_SWITCHES; i++) {
     switches[i] = received.switchState[i];
@@ -92,6 +102,8 @@ void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, in
         if (!wasAlert) {
           startAlertSound();
         }
+      } else {
+        alertStatus = false;
       }
       // Move to PLAY_MODE
       currentState = PLAY_MODE;
@@ -194,9 +206,13 @@ void updatePixels() {
       break;
 
     case BOMBED_MODE:
-      // Blink Red (0.5s period)
+      // Blink Red or Green (0.5s period)
       if ((millis() / 250) % 2 == 0) {
-        color = pixels.Color(255, 0, 0);
+        if (iAmLoser) {
+          color = pixels.Color(255, 0, 0); // Red
+        } else {
+          color = pixels.Color(0, 255, 0); // Green
+        }
       } else {
         color = pixels.Color(0, 0, 0);
       }
@@ -354,6 +370,10 @@ void setup() {
   // ESP-NOW
   Serial.println("Initializing ESP-NOW...");
   WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(WIFI_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
   } else {
@@ -363,9 +383,8 @@ void setup() {
     // Add Broadcast Peer
     esp_now_peer_info_t peerInfo;
     memset(&peerInfo, 0, sizeof(peerInfo));
-    uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-    peerInfo.channel = 0;
+    peerInfo.channel = WIFI_CHANNEL;
     peerInfo.encrypt = false;
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
       Serial.println("Failed to add peer");
@@ -376,6 +395,9 @@ void setup() {
   for (int i = 0; i < NUM_SWITCHES; i++) {
     switches[i] = false;
   }
+  
+  // Set Game ID for outgoing messages
+  myMsg.game_id = GAME_ID;
 
   Serial.println("Setup Complete. Game Ready!");
 }
@@ -475,15 +497,18 @@ void loop() {
       for (int i = 0; i < NUM_SWITCHES; i++) {
         myMsg.switchState[i] = switches[i];
       }
-      esp_now_send(NULL, (uint8_t *)&myMsg, sizeof(myMsg));
+      esp_now_send(broadcastAddress, (uint8_t *)&myMsg, sizeof(myMsg));
 
       startBoom();
     } else {
+      // Turn off ALERT_STATUS
+      alertStatus = false;
+
       // Send switch states and go to WAITING_MODE
       for (int i = 0; i < NUM_SWITCHES; i++) {
         myMsg.switchState[i] = switches[i];
       }
-      esp_now_send(NULL, (uint8_t *)&myMsg, sizeof(myMsg));
+      esp_now_send(broadcastAddress, (uint8_t *)&myMsg, sizeof(myMsg));
 
       currentState = WAITING_MODE;
       startBeep();
